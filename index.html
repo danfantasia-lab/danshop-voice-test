@@ -35,6 +35,10 @@ button.stop{background:none;color:var(--warn);border:2px solid var(--warn);font-
 <div class="engine"><b>聲音來源</b>
   <label><input type="radio" name="eng" value="ios" checked> A：iPhone 內建「美佳」</label>
 </div>
+<div class="engine"><b>插嘴模式</b>
+  <label><input type="radio" name="barge" value="on" checked> 開：她講話時麥克風也開著，你一出聲她就停</label>
+  <label><input type="radio" name="barge" value="off"> 關：她講完才開麥克風（比較穩，但不能插嘴）</label>
+</div>
 <audio id="player" referrerpolicy="no-referrer" playsinline></audio>
 <div class="row"><button id="go">開始</button><button id="stop" class="stop" hidden>停止</button></div>
 <div class="hint">測完請把下面的紀錄截圖給 Claude。</div>
@@ -115,26 +119,40 @@ function stopSpeaking(){ gToken++; try{ player.pause(); }catch(e){} try{ speechS
 function speak(text, then){
   spokenText = text; speaking = true;
   if(engine() === 'google'){ setState('speaking', '她在講話（可插嘴）'); log('開始唸（Google）：' + text); speakGoogle(text, then); return; }
-  setState('speaking', '她在講話（可插嘴）');
+  const myId = ++speakId;
+  if(!bargeOn()){ pausedForTTS = true; try{ rec && rec.abort(); }catch(e){} }
+  setState('speaking', bargeOn() ? '她在講話（可插嘴）' : '她在講話');
   const u = new SpeechSynthesisUtterance(text);
   if(voice){ u.voice = voice; u.lang = voice.lang; } else u.lang = 'zh-TW';
   u.rate = 1;
-  u.onend = () => { log('唸完'); speaking = false; spokenText = ''; if(active){ setState('listening','換你講，講完說「好了」'); then && then(); } };
-  u.onerror = e => { log('朗讀錯誤：' + e.error); speaking = false; spokenText = ''; if(active) setState('listening','換你講，講完說「好了」'); };
+  let ended = false;
+  const finish = (why) => {
+    if(ended || myId !== speakId) return; ended = true; clearInterval(dog);
+    log('唸完（' + why + '）'); speaking = false; spokenText = '';
+    if(pausedForTTS){ pausedForTTS = false; if(active) startRec(); }
+    if(active){ setState('listening','換你講，講完說「好了」'); then && then(); }
+  };
+  u.onend = () => finish('onend');
+  u.onerror = e => finish('錯誤 ' + e.error);
+  const t0s = Date.now();
+  // iPhone 開著麥克風時，朗讀結束常常收不到 onend，用輪詢補
+  const dog = setInterval(() => { if(Date.now() - t0s > 1200 && !speechSynthesis.speaking && !speechSynthesis.pending) finish('輪詢'); }, 400);
   log('開始唸：' + text);
   speechSynthesis.speak(u);
 }
 
+let speakId = 0, pausedForTTS = false;
+function bargeOn(){ return document.querySelector('input[name=barge]:checked').value === 'on'; }
 function bargeIn(){
   log('偵測到插嘴，停止朗讀');
-  stopSpeaking(); speaking = false; spokenText = '';
+  speakId++; stopSpeaking(); speaking = false; spokenText = '';
   setState('listening','你在講，講完說「好了」');
 }
 
 function handleText(full){
   const n = norm(full);
   if(/今天先到這|今天就到這|今天先這樣/.test(n)){ finish(); return true; }
-  const m = full.match(/^(.*?)[，,。\s]*好了[。！!]?\s*$/s);
+  const m = full.match(/^(.*?)[，,。\s]*好(了|啦|囉)[。！!]?\s*$/s);
   if(m){
     const answer = m[1].trim();
     finalBuf = ''; interim = ''; render();
@@ -149,13 +167,14 @@ function handleText(full){
   return false;
 }
 
+let lastInterimLog = 0;
 function startRec(){
   if(!SR){ setState('', '這個瀏覽器不支援語音辨識'); return; }
   rec = new SR();
   rec.lang = 'zh-TW'; rec.continuous = true; rec.interimResults = true;
   rec.onstart = () => log('辨識開始');
   rec.onerror = e => log('辨識錯誤：' + e.error);
-  rec.onend = () => { log('辨識結束'); if(active) setTimeout(()=>{ try{ startRec(); }catch(e){ log('重啟失敗：'+e.message); } }, 250); };
+  rec.onend = () => { log('辨識結束'); if(active && !pausedForTTS) setTimeout(()=>{ try{ startRec(); }catch(e){ log('重啟失敗：'+e.message); } }, 250); };
   rec.onresult = e => {
     let fin = '', tmp = '';
     for(let i = e.resultIndex; i < e.results.length; i++){
@@ -163,8 +182,10 @@ function startRec(){
       if(r.isFinal) fin += r[0].transcript; else tmp += r[0].transcript;
     }
     const piece = fin || tmp;
+    if(fin) log('聽到：' + fin + (speaking ? '（她還在講）' : ''));
+    else if(Date.now() - lastInterimLog > 1500){ lastInterimLog = Date.now(); log('聽到中：' + tmp + (speaking ? '（她還在講）' : '')); }
     if(speaking){
-      if(isEcho(piece)) { return; }
+      if(isEcho(piece)) { log('判定是回音，略過'); return; }
       if(norm(piece).length >= 2) bargeIn(); else return;
     }
     if(fin){ finalBuf += fin; interim = ''; } else interim = tmp;
