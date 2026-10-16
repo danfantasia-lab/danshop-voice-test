@@ -40,6 +40,7 @@ button.stop{background:none;color:var(--warn);border:2px solid var(--warn);font-
   <label><input type="radio" name="barge" value="off"> 關：她講完才開麥克風（比較穩，但不能插嘴）</label>
 </div>
 <audio id="player" referrerpolicy="no-referrer" playsinline></audio>
+<button id="srOnly" class="stop" style="color:var(--ink);border-color:var(--line)">只測聽寫（不唸題目，直接開麥克風）</button>
 <div class="row"><button id="go">開始</button><button id="stop" class="stop" hidden>停止</button></div>
 <div class="hint">測完請把下面的紀錄截圖給 Claude。</div>
 <div id="log"></div>
@@ -173,6 +174,10 @@ function startRec(){
   rec = new SR();
   rec.lang = 'zh-TW'; rec.continuous = true; rec.interimResults = true;
   rec.onstart = () => log('辨識開始');
+  rec.onaudiostart = () => log('麥克風有收音');
+  rec.onsoundstart = () => log('聽到聲音');
+  rec.onspeechstart = () => log('聽到人聲');
+  rec.onnomatch = () => log('有聲音但辨識不出字');
   rec.onerror = e => log('辨識錯誤：' + e.error);
   rec.onend = () => { log('辨識結束'); if(active && !pausedForTTS) setTimeout(()=>{ try{ startRec(); }catch(e){ log('重啟失敗：'+e.message); } }, 250); };
   rec.onresult = e => {
@@ -211,6 +216,7 @@ function stopAll(){
 
 $('go').onclick = async () => {
   active = true; qIndex = 0; $('go').hidden = true; $('stop').hidden = false;
+  log('插嘴模式：' + (bargeOn() ? '開' : '關'));
   try{ const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); }catch(e){}
   // iPhone 要在點擊當下先播一次，之後同一個播放器才能自動播放
   try{ player.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tAwAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRBqpAAAAAAAAAAAAAAAAAAAA'; player.play().catch(()=>{}); }catch(e){}
@@ -220,6 +226,12 @@ $('go').onclick = async () => {
   speak(QUESTIONS[0]);
 };
 $('stop').onclick = stopAll;
+$('srOnly').onclick = () => {
+  log('—— 只測聽寫 ——');
+  active = true; $('go').hidden = true; $('stop').hidden = false;
+  setState('listening','直接講話，看下面有沒有出字');
+  startRec();
+};
 document.addEventListener('visibilitychange', () => log('頁面' + (document.hidden ? '切到背景' : '回到前景')));
 </script>
 </body>
