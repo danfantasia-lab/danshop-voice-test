@@ -168,12 +168,12 @@ function handleText(full){
   return false;
 }
 
-let lastInterimLog = 0;
+let lastInterimLog = 0, onRecReady = null;
 function startRec(){
   if(!SR){ setState('', '這個瀏覽器不支援語音辨識'); return; }
   rec = new SR();
   rec.lang = 'zh-TW'; rec.continuous = true; rec.interimResults = true;
-  rec.onstart = () => log('辨識開始');
+  rec.onstart = () => { log('辨識開始'); if(onRecReady){ const f = onRecReady; onRecReady = null; f(); } };
   rec.onaudiostart = () => log('麥克風有收音');
   rec.onsoundstart = () => log('聽到聲音');
   rec.onspeechstart = () => log('聽到人聲');
@@ -222,7 +222,13 @@ $('go').onclick = async () => {
   try{ player.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tAwAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRBqpAAAAAAAAAAAAAAAAAAAA'; player.play().catch(()=>{}); }catch(e){}
   log('聲音來源：' + (engine()==='google' ? 'Google 翻譯' : 'iPhone 內建'));
   try{ wakeLock = await navigator.wakeLock.request('screen'); log('螢幕保持亮著：成功'); }catch(e){ log('螢幕保持亮著：失敗 ' + (e.message||'')); }
+  // 先開麥克風、等授權完成，再開始唸題目，避免授權視窗打斷朗讀
+  setState('listening','請允許麥克風');
+  const ready = new Promise(r => { onRecReady = r; setTimeout(r, 20000); });
   startRec();
+  await ready;
+  if(!active) return;
+  log('麥克風就緒，開始問第一題');
   speak(QUESTIONS[0]);
 };
 $('stop').onclick = stopAll;
