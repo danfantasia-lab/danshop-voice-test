@@ -132,7 +132,7 @@ function speak(text, then){
     log('唸完（' + why + '）'); speaking = false; spokenText = '';
     // iPhone 朗讀完之後，原本開著的辨識常常收不到聲音，一律重開一次
     if(!pausedForTTS){ pausedForTTS = true; try{ rec && rec.abort(); }catch(e){} log('重開麥克風'); }
-    if(pausedForTTS){ pausedForTTS = false; if(active) startRec(); }
+    if(pausedForTTS){ pausedForTTS = false; if(active) setTimeout(() => { if(active) startRec(); }, 300); }
     if(active){ setState('listening','換你講，講完說「好了」'); then && then(); }
   };
   u.onend = () => finish('onend');
